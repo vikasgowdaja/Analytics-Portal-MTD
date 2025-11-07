@@ -11,7 +11,7 @@ import time
 DB_CONFIG = {
     "host": "localhost",
     "user": "root",
-    "password": "Login@998",
+    "password": "python",
     "database": "student_results",
     "port": 3306
 }
