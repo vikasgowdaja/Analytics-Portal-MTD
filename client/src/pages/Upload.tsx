@@ -1,6 +1,12 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { Upload as UploadIcon, FileText, X, CheckCircle } from "lucide-react";
+import {
+  Upload as UploadIcon,
+  FileText,
+  X,
+  CheckCircle,
+  Loader2,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { toast } from "sonner";
@@ -9,16 +15,15 @@ export default function Upload() {
   const navigate = useNavigate();
   const [files, setFiles] = useState([]);
   const [uploading, setUploading] = useState(false);
+  const [processing, setProcessing] = useState(false);
   const [dragActive, setDragActive] = useState(false);
 
+  // ------------------- Drag Handlers -------------------
   const handleDrag = useCallback((e) => {
     e.preventDefault();
     e.stopPropagation();
-    if (e.type === "dragenter" || e.type === "dragover") {
-      setDragActive(true);
-    } else if (e.type === "dragleave") {
-      setDragActive(false);
-    }
+    if (e.type === "dragenter" || e.type === "dragover") setDragActive(true);
+    else if (e.type === "dragleave") setDragActive(false);
   }, []);
 
   const handleDrop = useCallback((e) => {
@@ -26,23 +31,22 @@ export default function Upload() {
     e.stopPropagation();
     setDragActive(false);
 
-    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-      const droppedFiles = Array.from(e.dataTransfer.files);
-      validateAndAddFiles(droppedFiles);
+    if (e.dataTransfer.files?.length > 0) {
+      validateAndAddFiles(Array.from(e.dataTransfer.files));
     }
   }, []);
 
+  // ------------------- File Validation -------------------
   const validateAndAddFiles = (selectedFiles) => {
     const validPDFs = selectedFiles.filter(
       (f) => f.type === "application/pdf"
     );
 
-    if (validPDFs.length === 0) {
+    if (!validPDFs.length) {
       toast.error("Please upload PDF files only");
       return;
     }
 
-    // Prevent duplicates
     const uniqueFiles = validPDFs.filter(
       (f) => !files.some((existing) => existing.name === f.name)
     );
@@ -51,15 +55,39 @@ export default function Upload() {
   };
 
   const handleFileInput = (e) => {
-    if (e.target.files && e.target.files.length > 0) {
-      validateAndAddFiles(Array.from(e.target.files));
-    }
+    validateAndAddFiles(Array.from(e.target.files));
   };
 
   const handleRemoveFile = (name) => {
+    if (uploading || processing) return;
     setFiles((prev) => prev.filter((f) => f.name !== name));
   };
 
+  // ------------------- Polling Function -------------------
+  const waitForProcessing = async () => {
+    setProcessing(true);
+    toast.info("Processing uploaded PDFs...");
+
+    let done = false;
+
+    while (!done) {
+      const res = await fetch("http://localhost:5000/api/status");
+      const data = await res.json();
+
+      if (data.status === "ready") {
+        done = true;
+        break;
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+    }
+
+    toast.success("Processing complete! Redirecting...");
+    setProcessing(false);
+    navigate("/overview");
+  };
+
+  // ------------------- Upload Handler -------------------
   const handleUpload = async () => {
     if (files.length === 0) {
       toast.error("Please select at least one PDF file");
@@ -67,6 +95,7 @@ export default function Upload() {
     }
 
     setUploading(true);
+
     try {
       const formData = new FormData();
       files.forEach((file) => formData.append("files", file));
@@ -80,9 +109,11 @@ export default function Upload() {
 
       if (!res.ok) throw new Error(data.error || "Upload failed");
 
-      toast.success(data.message || "Files uploaded successfully");
+      toast.success("Uploaded successfully! Starting processing...");
       setFiles([]);
-      navigate("/overview");
+
+      // 🚀 Start Polling
+      waitForProcessing();
     } catch (error) {
       console.error("Upload error:", error);
       toast.error(error.message || "Failed to upload files");
@@ -91,13 +122,27 @@ export default function Upload() {
     }
   };
 
+  // ------------------- Logout -------------------
   const handleLogout = () => {
     toast.info("You have been logged out");
     navigate("/auth");
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-dashboard-bg via-background to-accent/10 p-8">
+    <div className="min-h-screen bg-gradient-to-br from-dashboard-bg via-background to-accent/10 p-8 relative">
+
+      {/* FULL SCREEN OVERLAY LOADING */}
+      {(processing || uploading) && (
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex flex-col gap-3 items-center justify-center z-50 text-white">
+          <Loader2 className="w-12 h-12 animate-spin" />
+          <p className="text-lg">
+            {uploading
+              ? "Uploading files..."
+              : "Processing PDFs... Please wait"}
+          </p>
+        </div>
+      )}
+
       <div className="max-w-4xl mx-auto">
         <div className="flex justify-between items-center mb-8">
           <div>
@@ -113,6 +158,7 @@ export default function Upload() {
           </Button>
         </div>
 
+        {/* UPLOAD CARD */}
         <Card className="p-8">
           <div
             className={`border-2 border-dashed rounded-2xl p-12 text-center transition-all ${
@@ -128,8 +174,13 @@ export default function Upload() {
             {files.length === 0 ? (
               <>
                 <UploadIcon className="w-16 h-16 mx-auto mb-4 text-muted-foreground" />
-                <h3 className="text-xl font-semibold mb-2">Drop your PDFs here</h3>
-                <p className="text-muted-foreground mb-4">or click to browse</p>
+                <h3 className="text-xl font-semibold mb-2">
+                  Drop your PDFs here
+                </h3>
+                <p className="text-muted-foreground mb-4">
+                  or click to browse
+                </p>
+
                 <input
                   type="file"
                   id="file-upload"
@@ -138,14 +189,12 @@ export default function Upload() {
                   multiple
                   onChange={handleFileInput}
                 />
+
                 <Button asChild variant="outline">
                   <label htmlFor="file-upload" className="cursor-pointer">
                     Select PDFs
                   </label>
                 </Button>
-                <p className="text-sm text-muted-foreground mt-4">
-                  Supported format: PDF • Multiple files allowed
-                </p>
               </>
             ) : (
               <div className="space-y-4">
@@ -157,9 +206,12 @@ export default function Upload() {
                     >
                       <div className="flex items-center gap-3">
                         <FileText className="w-5 h-5 text-primary" />
-                        <span className="text-sm font-medium">{file.name}</span>
+                        <span className="text-sm font-medium">
+                          {file.name}
+                        </span>
                       </div>
-                      {!uploading && (
+
+                      {!uploading && !processing && (
                         <Button
                           variant="ghost"
                           size="icon"
@@ -174,12 +226,12 @@ export default function Upload() {
 
                 <Button
                   onClick={handleUpload}
-                  disabled={uploading}
+                  disabled={uploading || processing}
                   className="w-full"
                   size="lg"
                 >
                   {uploading ? (
-                    <>Uploading...</>
+                    "Uploading..."
                   ) : (
                     <>
                       <CheckCircle className="w-4 h-4 mr-2" />
@@ -192,25 +244,13 @@ export default function Upload() {
           </div>
         </Card>
 
+        {/* Instructions */}
         <div className="mt-8 space-y-4">
           <h3 className="text-lg font-semibold">Instructions</h3>
           <ul className="space-y-2 text-muted-foreground">
-            <li className="flex items-start gap-2">
-              <span className="text-primary mt-1">•</span>
-              <span>Upload multiple student mark sheets (PDF format only)</span>
-            </li>
-            <li className="flex items-start gap-2">
-              <span className="text-primary mt-1">•</span>
-              <span>
-                Files are automatically stored inside a date-based folder on the server
-              </span>
-            </li>
-            <li className="flex items-start gap-2">
-              <span className="text-primary mt-1">•</span>
-              <span>
-                The system will later process and extract data from uploaded PDFs
-              </span>
-            </li>
+            <li>• Upload PDFs in bulk</li>
+            <li>• Files are stored inside a date-based folder</li>
+            <li>• Processing happens automatically after upload</li>
           </ul>
         </div>
       </div>

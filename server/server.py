@@ -5,6 +5,8 @@ import traceback
 import math
 import os
 from datetime import datetime
+from threading import Thread
+from app import process_today_data
 
 app = Flask(__name__)
 CORS(app)  # Allow React frontend to connect
@@ -25,7 +27,8 @@ def sanitize_json(obj):
         return obj
 
 
-# --- 📤 Multi-PDF Upload Endpoint ---
+
+
 @app.route("/api/upload", methods=["POST"])
 def upload_pdfs():
     try:
@@ -36,7 +39,6 @@ def upload_pdfs():
         if not files:
             return jsonify({"error": "No files selected"}), 400
 
-        # 📅 Create a subfolder for today (e.g., uploads/01-11-2025)
         today = datetime.now().strftime("%d-%m-%Y")
         upload_dir = os.path.join("uploads", today)
         os.makedirs(upload_dir, exist_ok=True)
@@ -52,8 +54,16 @@ def upload_pdfs():
             saved_files.append(file_path)
             print(f"✅ Saved: {file_path}")
 
+        # 🚀 Run processing in background
+        def background_task():
+            print("⚙️ Background PDF processing started...")
+            process_today_data()
+            print("🎉 Background PDF processing completed.")
+
+        Thread(target=background_task).start()
+
         return jsonify({
-            "message": f"{len(saved_files)} PDF file(s) uploaded successfully",
+            "message": "Files uploaded successfully. Processing will continue in background.",
             "saved_files": saved_files
         }), 200
 
@@ -61,6 +71,14 @@ def upload_pdfs():
         print("❌ ERROR (upload):", e)
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
+@app.route("/api/status", methods=["GET"])
+def get_status():
+    today = datetime.now().strftime("%d-%m-%Y")
+    db_path = f"./output/student_results_{today}.db"
+
+    return jsonify({
+        "status": "ready" if os.path.exists(db_path) else "processing"
+    })
 
 
 # --- 📊 Department endpoint ---
