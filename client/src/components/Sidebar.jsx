@@ -1,5 +1,5 @@
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import { Home, LayoutDashboard, Users, Upload, LogOut } from "lucide-react";
+import { Home, LayoutDashboard, Users, Upload, LogOut,Trash2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 
 const Sidebar = () => {
@@ -11,6 +11,7 @@ const Sidebar = () => {
     { path: "/overview", label: "Overview", icon: <LayoutDashboard size={18} /> },
     { path: "/department", label: "Department", icon: <Users size={18} /> },
     { path: "/upload", label: "Upload", icon: <Upload size={18} /> },
+    { path: "/unload", label: "Unload PDFs", icon: <Trash2 size={18} /> },
   ];
 
   const handleLogout = async () => {
