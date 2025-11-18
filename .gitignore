@@ -37,6 +37,7 @@ secrets.json
 *.pid
 logs/
 output/
+server/uploads
 
 # Unit test / coverage
 .coverage

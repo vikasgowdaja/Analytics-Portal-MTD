@@ -1,4 +1,4 @@
-import { useMemo, useCallback, useState } from "react";
+import { useMemo, useCallback, useState, useEffect } from "react";
 import { TrendingUp, Users, Building2, Award } from "lucide-react";
 import { useOverviewData } from "@/hooks/useOverviewData";
 import { MetricCard } from "@/components/dashboard/MetricCard";
@@ -10,28 +10,42 @@ import { getColorPalette } from "@/utils/formatters";
 import { calculateDerivedMetrics } from "@/utils/analytics";
 
 export default function Overview() {
-  const { data, loading, error } = useOverviewData();
-  const [refreshKey, setRefreshKey] = useState(0);
+
+  // ------------------- ALL HOOKS AT THE TOP -------------------
+  const [refreshKey, setRefreshKey] = useState(Date.now());
+  const { data, loading, error } = useOverviewData(refreshKey);
 
   const colors = useMemo(() => getColorPalette(), []);
-
   const derivedMetrics = useMemo(
     () => (data ? calculateDerivedMetrics(data) : null),
     [data]
   );
 
   const handleRetry = useCallback(() => {
-    setRefreshKey((prev) => prev + 1);
-    window.location.reload();
+    setRefreshKey(Date.now());
   }, []);
 
-  // Loading state
+  // 🔥 FIX: Listen for refresh trigger BEFORE UI returns anything
+  useEffect(() => {
+    const listener = () => {
+      const stamp = localStorage.getItem("triggerRefresh");
+      if (stamp) {
+        const num = parseInt(stamp, 10);
+        if (!Number.isNaN(num)) setRefreshKey(num);
+      }
+    };
+
+    window.addEventListener("storage", listener);
+    return () => window.removeEventListener("storage", listener);
+  }, []);
+
+  // ------------------- CONDITIONAL UI AFTER HOOKS -------------------
+
   if (loading) return <LoadingSkeleton />;
 
-  // Error state
-  if (error) return <ErrorDisplay error={error} onRetry={handleRetry} />;
+  if (error)
+    return <ErrorDisplay error={error} onRetry={handleRetry} />;
 
-  // No data state
   if (!data) {
     return (
       <div className="p-8 text-center text-muted-foreground mt-10">
@@ -40,11 +54,11 @@ export default function Overview() {
     );
   }
 
+  // ---------------------- MAIN UI ----------------------
   return (
     <div className="p-8 bg-gradient-to-br from-primary/5 via-accent/5 to-secondary/5 min-h-screen">
-      {/* Header */}
       <div className="text-center mb-8">
-        <h2 className="text-4xl font-bold  bg-clip-text bg-gradient-to-r from-indigo-600 to-purple-600 mb-2">
+        <h2 className="text-4xl font-bold bg-clip-text bg-gradient-to-r from-indigo-600 to-purple-600 mb-2">
           📊 Department Analytics Dashboard
         </h2>
         <p className="text-muted-foreground">
@@ -52,7 +66,7 @@ export default function Overview() {
         </p>
       </div>
 
-      {/* Key Metrics Grid */}
+      {/* Key Metrics */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
         <MetricCard
           title="Total Students"
@@ -87,17 +101,17 @@ export default function Overview() {
         />
       </div>
 
-      {/* Analytics Panel */}
       {derivedMetrics && (
         <div className="mb-8">
           <AnalyticsPanel metrics={derivedMetrics} />
         </div>
       )}
 
-      {/* Main Chart */}
-      <DepartmentBarChart data={data.students_per_department} colors={colors} />
+      <DepartmentBarChart
+        data={data.students_per_department}
+        colors={colors}
+      />
 
-      {/* Footer */}
       <div className="mt-8 text-center text-sm text-muted-foreground">
         Last updated: {new Date().toLocaleString()}
       </div>

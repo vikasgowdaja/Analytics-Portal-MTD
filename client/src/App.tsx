@@ -11,6 +11,7 @@ import Upload from "./pages/Upload";
 import NotFound from "./pages/NotFound";
 import { ProtectedRoute } from "./components/ProtectedRoute";
 import AppLayout from "./AppLayout";
+import Unload from "./pages/Unload";
 
 const queryClient = new QueryClient();
 
@@ -34,10 +35,11 @@ const App = () => (
           > <Route path="/" element={<Index />} />
             <Route path="/overview" element={<Overview />} />
             <Route path="/department" element={<Department />} />
+            <Route path="/unload" element={<Unload />} />
             <Route
               path="/upload"
               element={
-                <ProtectedRoute requireAdmin>
+                <ProtectedRoute>
                   <Upload />
                 </ProtectedRoute>
               }
