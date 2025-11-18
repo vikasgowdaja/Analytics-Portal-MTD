@@ -9,12 +9,10 @@ from threading import Thread
 from app import process_today_data
 
 app = Flask(__name__)
-CORS(app)  # Allow React frontend to connect
+CORS(app)
 
 
-# --- 🧩 Helper function ---
 def sanitize_json(obj):
-    """Recursively replace NaN/Infinity with None to make data JSON-safe."""
     if isinstance(obj, list):
         return [sanitize_json(v) for v in obj]
     elif isinstance(obj, dict):
@@ -25,8 +23,6 @@ def sanitize_json(obj):
         return obj
     else:
         return obj
-
-
 
 
 @app.route("/api/upload", methods=["POST"])
@@ -42,6 +38,7 @@ def upload_pdfs():
         today = datetime.now().strftime("%d-%m-%Y")
         upload_dir = os.path.join("uploads", today)
         os.makedirs(upload_dir, exist_ok=True)
+        print("Saving to folder:", os.path.abspath(upload_dir))
 
         saved_files = []
 
@@ -50,14 +47,29 @@ def upload_pdfs():
                 return jsonify({"error": f"{file.filename} is not a PDF file"}), 400
 
             file_path = os.path.join(upload_dir, file.filename)
+
+            # 🆕 SKIP DUPLICATE UPLOADS
+            if os.path.exists(file_path):
+                print(f"⚠️ Skipped duplicate: {file.filename}")
+                continue
+
             file.save(file_path)
             saved_files.append(file_path)
             print(f"✅ Saved: {file_path}")
 
+
         # 🚀 Run processing in background
         def background_task():
             print("⚙️ Background PDF processing started...")
-            process_today_data()
+            db_path = process_today_data()
+
+            # 🔥 MOST IMPORTANT FIX — clear stale cached DataFrame
+            print("♻️ Forcing DB reload into memory...")
+            try:
+                load_data(force_reload=True)
+            except Exception as e:
+                print("⚠️ Reload error:", e)
+
             print("🎉 Background PDF processing completed.")
 
         Thread(target=background_task).start()
@@ -71,6 +83,8 @@ def upload_pdfs():
         print("❌ ERROR (upload):", e)
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
+
+
 @app.route("/api/status", methods=["GET"])
 def get_status():
     today = datetime.now().strftime("%d-%m-%Y")
@@ -81,11 +95,11 @@ def get_status():
     })
 
 
-# --- 📊 Department endpoint ---
 @app.route("/api/department", methods=["GET"])
 def get_department_data():
     try:
         df = load_data()
+
         department = request.args.get("department")
         semester = request.args.get("semester")
 
@@ -105,9 +119,7 @@ def get_department_data():
             "data": filtered.head(10).to_dict(orient="records")
         }
 
-        # ✅ Sanitize before returning
-        safe_result = sanitize_json(result)
-        return jsonify(safe_result)
+        return jsonify(sanitize_json(result))
 
     except Exception as e:
         print("❌ ERROR (department):", e)
@@ -115,13 +127,10 @@ def get_department_data():
         return jsonify({"error": str(e)}), 500
 
 
-# --- 🧠 Overview endpoint ---
 @app.route("/api/overview", methods=["GET"])
 def get_overview():
     try:
         df = load_data()
-        if isinstance(df, dict) and "error" in df:
-            return jsonify(df), 500
 
         total_students = len(df)
 
@@ -145,16 +154,58 @@ def get_overview():
             "avg_marks_per_department": avg_marks_per_department
         }
 
-        # ✅ Sanitize before jsonify
-        safe_result = sanitize_json(result)
-        return jsonify(safe_result)
+        return jsonify(sanitize_json(result))
 
     except Exception as e:
         print("❌ ERROR (overview):", e)
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
 
+@app.route("/api/uploads/list", methods=["GET"])
+def list_uploaded_pdfs():
+    today = datetime.now().strftime("%d-%m-%Y")
+    folder = os.path.join("uploads", today)
 
-# --- 🚀 Run the server ---
+    if not os.path.exists(folder):
+        return jsonify({"files": []})
+
+    files = [f for f in os.listdir(folder) if f.lower().endswith(".pdf")]
+
+    return jsonify({"files": files})
+@app.route("/api/uploads/delete", methods=["POST"])
+def delete_selected_pdfs():
+    data = request.json
+    files_to_delete = data.get("files", [])
+
+    today = datetime.now().strftime("%d-%m-%Y")
+    folder = os.path.join("uploads", today)
+
+    deleted = []
+    failed = []
+
+    for filename in files_to_delete:
+        file_path = os.path.join(folder, filename)
+        if os.path.exists(file_path):
+            try:
+                os.remove(file_path)
+                deleted.append(filename)
+            except:
+                failed.append(filename)
+        else:
+            failed.append(filename)
+
+    # Re-process after deletion
+    try:
+        process_today_data()
+        load_data(force_reload=True)
+    except Exception as e:
+        print("❌ Reprocess error:", e)
+
+    return jsonify({
+        "deleted": deleted,
+        "failed": failed,
+        "message": "Selected files deleted and data refreshed."
+    })
+
 if __name__ == "__main__":
     app.run(debug=True, port=5000)

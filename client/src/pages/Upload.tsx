@@ -84,6 +84,7 @@ export default function Upload() {
 
     toast.success("Processing complete! Redirecting...");
     setProcessing(false);
+    localStorage.setItem("triggerRefresh", Date.now().toString());
     navigate("/overview");
   };
 
